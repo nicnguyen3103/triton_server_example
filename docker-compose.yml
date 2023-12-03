@@ -1,0 +1,106 @@
+services:
+  triton: # dns service: triton = ip 10.0.4.
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    networks:
+      - model-net
+    ports:
+        - "8002:8002"
+        - "8000:8000"
+        - "8001:8001"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+    # mount model repository into triton container
+    volumes:
+      - ./server/model_repository:/models
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    networks:
+      - model-net
+    ports:
+      - "5000:5000"
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  prometheus:
+    image: prom/prometheus:v2.36.2
+    volumes:
+      - ./monitor/prometheus/:/etc/prometheus/
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+      - '--storage.tsdb.retention.size=10GB'
+    networks:
+      - model-net
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: wget --spider http://localhost:9090
+      interval: 15s
+      timeout: 30s
+      retries: 3
+    deploy:
+      restart_policy:
+        condition: on-failure
+  
+  grafana:
+    image: grafana/grafana:9.5.3
+    depends_on:
+      - prometheus
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "4669:3000"
+    networks:
+      - model-net
+    healthcheck:
+      test: wget --spider http://localhost:3000/api/health
+      interval: 60s
+      timeout: 120s
+      retries: 5
+    user: "472"
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+  streamlit:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    networks:
+      - model-net
+    ports:
+      - "8501:8501"
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+networks:
+  model-net:
+    driver: bridge
+    name: model-net
+
+volumes:
+    prometheus_data:
+    grafana_data:
