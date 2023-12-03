@@ -1,0 +1,5 @@
+opencv-python==4.8.1.78
+uvicorn[standard]
+tritonclient[http]==2.39.0
+fastapi==0.104.1
+python-multipart==0.0.6
